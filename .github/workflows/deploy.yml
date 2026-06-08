@@ -18,16 +18,15 @@ jobs:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
-          # This FTP account (visionhill@...) is scoped to its own home folder
-          # (public_html/visionhill), so on login it lands directly inside it.
-          # Upload to the login root — do NOT prefix public_html/ again.
-          server-dir: ./
           protocol: ftp
           port: 21
-          # Upload everything in the repo except the items below.
-          exclude:
-            - "**/.git*"
-            - "**/.git*/**"
-            - "**/.github/**"
-            - "**/.DS_Store"
-            - "README.md"
+          # This FTP account is scoped to its own home folder
+          # (public_html/visionhill), so on login it lands directly inside it.
+          server-dir: ./
+          # exclude must be a multiline string, NOT a YAML list.
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github/**
+            **/.DS_Store
+            README.md
