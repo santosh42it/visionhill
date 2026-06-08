@@ -18,10 +18,12 @@ jobs:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
-          # Bluehost shared hosting serves the primary domain from public_html.
-          # If this site lives on an addon/subdomain, change this to that folder
-          # e.g. public_html/visionhill/ or the addon domain's docroot.
-          server-dir: public_html/
+          # This FTP account (visionhill@...) is scoped to its own home folder
+          # (public_html/visionhill), so on login it lands directly inside it.
+          # Upload to the login root — do NOT prefix public_html/ again.
+          server-dir: ./
+          protocol: ftp
+          port: 21
           # Upload everything in the repo except the items below.
           exclude:
             - "**/.git*"
