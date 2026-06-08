@@ -1,0 +1,31 @@
+name: Deploy to Bluehost via FTP
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allows manual run from the Actions tab
+
+jobs:
+  ftp-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy files via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
+          # Bluehost shared hosting serves the primary domain from public_html.
+          # If this site lives on an addon/subdomain, change this to that folder
+          # e.g. public_html/visionhill/ or the addon domain's docroot.
+          server-dir: public_html/
+          # Upload everything in the repo except the items below.
+          exclude:
+            - "**/.git*"
+            - "**/.git*/**"
+            - "**/.github/**"
+            - "**/.DS_Store"
+            - "README.md"
