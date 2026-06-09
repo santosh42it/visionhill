@@ -2,23 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
   <title>Vision Hill</title>
   <style>
+    * { box-sizing: border-box; }
     html, body {
       margin: 0;
       padding: 0;
-      height: 100%;
-      width: 100%;
+      min-height: 100%;
       background: #2b2b2b;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-text-size-adjust: 100%;
     }
 
-    .pdf-frame {
-      border: none;
+    /* Scrollable page container — works on desktop and mobile */
+    #viewer {
       width: 100%;
-      height: 100vh;
+      min-height: 100vh;
+      padding: 16px 0 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    #viewer canvas {
       display: block;
+      width: 100%;
+      max-width: 1100px;          /* keeps slides readable on big screens */
+      height: auto;
+      background: #fff;
+      box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+      border-radius: 2px;
     }
 
     /* ---- Loading overlay ---- */
@@ -34,142 +48,152 @@
       z-index: 10;
       transition: opacity 0.4s ease;
     }
-    #loader.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
+    #loader.hidden { opacity: 0; pointer-events: none; }
     .spinner {
-      width: 52px;
-      height: 52px;
+      width: 52px; height: 52px;
       border: 4px solid rgba(255, 255, 255, 0.18);
       border-top-color: #4ea1ff;
       border-radius: 50%;
       animation: spin 0.9s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    .loader-text {
-      color: #e6e6e6;
-      font-size: 15px;
-      letter-spacing: 0.3px;
-    }
+    .loader-text { color: #e6e6e6; font-size: 15px; letter-spacing: 0.3px; }
     .loader-text strong { color: #fff; font-weight: 600; }
-
     .bar {
-      width: min(320px, 70vw);
-      height: 6px;
+      width: min(320px, 70vw); height: 6px;
       background: rgba(255, 255, 255, 0.15);
-      border-radius: 999px;
-      overflow: hidden;
+      border-radius: 999px; overflow: hidden;
     }
     .bar-fill {
-      height: 100%;
-      width: 0%;
-      background: #4ea1ff;
-      border-radius: 999px;
+      height: 100%; width: 0%;
+      background: #4ea1ff; border-radius: 999px;
       transition: width 0.2s ease;
     }
-    /* Indeterminate mode (when total size is unknown) */
     .bar.indeterminate .bar-fill {
       width: 35% !important;
       animation: slide 1.2s ease-in-out infinite;
     }
-    @keyframes slide {
-      0%   { margin-left: -35%; }
-      100% { margin-left: 100%; }
-    }
+    @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
 
-    .fallback {
-      color: #fff;
-      text-align: center;
-      padding: 40px 20px;
-    }
+    .fallback { color: #fff; text-align: center; padding: 40px 20px; }
     .fallback a { color: #4ea1ff; }
   </style>
 </head>
 <body>
-  <!-- Loading overlay shown until the PDF is fully downloaded -->
+  <!-- Loading overlay shown until the first pages are ready -->
   <div id="loader">
     <div class="spinner"></div>
     <div class="bar" id="bar"><div class="bar-fill" id="barFill"></div></div>
     <div class="loader-text" id="loaderText">Loading document… <strong id="pct">0%</strong></div>
   </div>
 
-  <!-- The viewer; src is filled in by JS once the PDF is ready -->
-  <iframe class="pdf-frame" id="viewer" title="Vision Hill"></iframe>
+  <!-- Rendered PDF pages go here (responsive, scrollable) -->
+  <div id="viewer" aria-label="Vision Hill document"></div>
 
   <noscript>
-    <object class="pdf-frame" data="Vision%20Hill.pdf" type="application/pdf">
-      <div class="fallback">
-        <p>Your browser can't display the PDF inline.</p>
-        <p><a href="Vision%20Hill.pdf">Click here to open Vision Hill.pdf</a></p>
-      </div>
-    </object>
+    <div class="fallback">
+      <p><a href="Vision%20Hill.pdf">Open Vision Hill.pdf</a></p>
+    </div>
   </noscript>
 
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script>
     (function () {
       var PDF_URL = "Vision%20Hill.pdf";
-      var loader   = document.getElementById("loader");
-      var viewer   = document.getElementById("viewer");
-      var barFill  = document.getElementById("barFill");
-      var bar      = document.getElementById("bar");
-      var pctEl    = document.getElementById("pct");
-      var textEl   = document.getElementById("loaderText");
+      var loader  = document.getElementById("loader");
+      var viewer  = document.getElementById("viewer");
+      var barFill = document.getElementById("barFill");
+      var bar     = document.getElementById("bar");
+      var pctEl   = document.getElementById("pct");
 
       function hideLoader() {
         loader.classList.add("hidden");
         setTimeout(function () { loader.style.display = "none"; }, 450);
       }
 
-      // Fallback: if anything goes wrong, just point the iframe at the file directly.
+      // Last-resort fallback: hand the file to the browser/native viewer.
       function directLoad() {
-        viewer.src = PDF_URL;
-        viewer.addEventListener("load", hideLoader);
-        // Safety net in case the iframe load event never fires.
-        setTimeout(hideLoader, 8000);
+        var f = document.createElement("iframe");
+        f.src = PDF_URL;
+        f.style.cssText = "border:0;width:100%;height:100vh;display:block;";
+        viewer.appendChild(f);
+        setTimeout(hideLoader, 4000);
       }
 
-      // Preferred path: stream the PDF so we can show real download progress,
-      // then display it from memory (instant, no second download).
-      if (window.fetch && window.ReadableStream) {
-        fetch(PDF_URL)
-          .then(function (resp) {
-            if (!resp.ok || !resp.body) throw new Error("bad response");
-            var total = parseInt(resp.headers.get("Content-Length") || "0", 10);
-            if (!total) bar.classList.add("indeterminate");
+      if (!window.pdfjsLib) { directLoad(); return; }
 
-            var received = 0;
-            var chunks = [];
-            var reader = resp.body.getReader();
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 
-            return (function pump() {
-              return reader.read().then(function (res) {
-                if (res.done) return new Blob(chunks, { type: "application/pdf" });
-                chunks.push(res.value);
-                received += res.value.length;
-                if (total) {
-                  var pct = Math.min(100, Math.round((received / total) * 100));
-                  barFill.style.width = pct + "%";
-                  pctEl.textContent = pct + "%";
-                } else {
-                  pctEl.textContent = (received / 1048576).toFixed(1) + " MB";
-                }
-                return pump();
+      var pdfDoc = null;
+      var renderToken = 0; // guards against overlapping re-renders on resize
+
+      // Cap device pixel ratio so we stay crisp without exploding memory on 15 pages.
+      function dpr() { return Math.min(window.devicePixelRatio || 1, 2); }
+
+      function renderAll() {
+        if (!pdfDoc) return;
+        var myToken = ++renderToken;
+        viewer.innerHTML = "";
+
+        // Target CSS width each canvas will occupy (matches the #viewer canvas rule).
+        var cssWidth = Math.min(viewer.clientWidth || window.innerWidth, 1100);
+        var scaleToCss, ratio = dpr();
+
+        var chain = Promise.resolve();
+        for (var i = 1; i <= pdfDoc.numPages; i++) {
+          (function (pageNum) {
+            chain = chain.then(function () {
+              if (myToken !== renderToken) return; // a newer resize started
+              return pdfDoc.getPage(pageNum).then(function (page) {
+                var base = page.getViewport({ scale: 1 });
+                scaleToCss = cssWidth / base.width;
+                var viewport = page.getViewport({ scale: scaleToCss * ratio });
+
+                var canvas = document.createElement("canvas");
+                canvas.width = Math.floor(viewport.width);
+                canvas.height = Math.floor(viewport.height);
+                viewer.appendChild(canvas);
+
+                return page.render({
+                  canvasContext: canvas.getContext("2d"),
+                  viewport: viewport
+                }).promise.then(function () {
+                  if (pageNum === 1) hideLoader(); // reveal as soon as page 1 is drawn
+                });
               });
-            })();
-          })
-          .then(function (blob) {
-            var url = URL.createObjectURL(blob);
-            viewer.src = url;
-            // Give the viewer a moment to render the first page, then reveal.
-            viewer.addEventListener("load", hideLoader);
-            setTimeout(hideLoader, 1200);
-          })
-          .catch(directLoad);
-      } else {
-        directLoad();
+            });
+          })(i);
+        }
+        return chain.then(function () {
+          if (myToken === renderToken) hideLoader();
+        });
       }
+
+      var loadingTask = pdfjsLib.getDocument({ url: PDF_URL });
+      loadingTask.onProgress = function (p) {
+        if (p && p.total) {
+          var pct = Math.min(100, Math.round((p.loaded / p.total) * 100));
+          barFill.style.width = pct + "%";
+          pctEl.textContent = pct + "%";
+        } else {
+          bar.classList.add("indeterminate");
+        }
+      };
+
+      loadingTask.promise.then(function (pdf) {
+        pdfDoc = pdf;
+        return renderAll();
+      }).catch(directLoad);
+
+      // Re-render on meaningful width changes (e.g. phone rotation) — debounced.
+      var rt, lastW = window.innerWidth;
+      window.addEventListener("resize", function () {
+        if (Math.abs(window.innerWidth - lastW) < 50) return;
+        lastW = window.innerWidth;
+        clearTimeout(rt);
+        rt = setTimeout(renderAll, 250);
+      });
     })();
   </script>
 </body>
