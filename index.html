@@ -21,25 +21,156 @@
       display: block;
     }
 
+    /* ---- Loading overlay ---- */
+    #loader {
+      position: fixed;
+      inset: 0;
+      background: #2b2b2b;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+      z-index: 10;
+      transition: opacity 0.4s ease;
+    }
+    #loader.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .spinner {
+      width: 52px;
+      height: 52px;
+      border: 4px solid rgba(255, 255, 255, 0.18);
+      border-top-color: #4ea1ff;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loader-text {
+      color: #e6e6e6;
+      font-size: 15px;
+      letter-spacing: 0.3px;
+    }
+    .loader-text strong { color: #fff; font-weight: 600; }
+
+    .bar {
+      width: min(320px, 70vw);
+      height: 6px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      background: #4ea1ff;
+      border-radius: 999px;
+      transition: width 0.2s ease;
+    }
+    /* Indeterminate mode (when total size is unknown) */
+    .bar.indeterminate .bar-fill {
+      width: 35% !important;
+      animation: slide 1.2s ease-in-out infinite;
+    }
+    @keyframes slide {
+      0%   { margin-left: -35%; }
+      100% { margin-left: 100%; }
+    }
+
     .fallback {
       color: #fff;
       text-align: center;
       padding: 40px 20px;
     }
-
-    .fallback a {
-      color: #4ea1ff;
-    }
+    .fallback a { color: #4ea1ff; }
   </style>
 </head>
 <body>
-  <!-- The PDF loads automatically when the page opens -->
-  <object class="pdf-frame" data="Vision%20Hill.pdf" type="application/pdf">
-    <iframe class="pdf-frame" src="Vision%20Hill.pdf"></iframe>
-    <div class="fallback">
-      <p>Your browser can't display the PDF inline.</p>
-      <p><a href="Vision%20Hill.pdf">Click here to open Vision Hill.pdf</a></p>
-    </div>
-  </object>
+  <!-- Loading overlay shown until the PDF is fully downloaded -->
+  <div id="loader">
+    <div class="spinner"></div>
+    <div class="bar" id="bar"><div class="bar-fill" id="barFill"></div></div>
+    <div class="loader-text" id="loaderText">Loading document… <strong id="pct">0%</strong></div>
+  </div>
+
+  <!-- The viewer; src is filled in by JS once the PDF is ready -->
+  <iframe class="pdf-frame" id="viewer" title="Vision Hill"></iframe>
+
+  <noscript>
+    <object class="pdf-frame" data="Vision%20Hill.pdf" type="application/pdf">
+      <div class="fallback">
+        <p>Your browser can't display the PDF inline.</p>
+        <p><a href="Vision%20Hill.pdf">Click here to open Vision Hill.pdf</a></p>
+      </div>
+    </object>
+  </noscript>
+
+  <script>
+    (function () {
+      var PDF_URL = "Vision%20Hill.pdf";
+      var loader   = document.getElementById("loader");
+      var viewer   = document.getElementById("viewer");
+      var barFill  = document.getElementById("barFill");
+      var bar      = document.getElementById("bar");
+      var pctEl    = document.getElementById("pct");
+      var textEl   = document.getElementById("loaderText");
+
+      function hideLoader() {
+        loader.classList.add("hidden");
+        setTimeout(function () { loader.style.display = "none"; }, 450);
+      }
+
+      // Fallback: if anything goes wrong, just point the iframe at the file directly.
+      function directLoad() {
+        viewer.src = PDF_URL;
+        viewer.addEventListener("load", hideLoader);
+        // Safety net in case the iframe load event never fires.
+        setTimeout(hideLoader, 8000);
+      }
+
+      // Preferred path: stream the PDF so we can show real download progress,
+      // then display it from memory (instant, no second download).
+      if (window.fetch && window.ReadableStream) {
+        fetch(PDF_URL)
+          .then(function (resp) {
+            if (!resp.ok || !resp.body) throw new Error("bad response");
+            var total = parseInt(resp.headers.get("Content-Length") || "0", 10);
+            if (!total) bar.classList.add("indeterminate");
+
+            var received = 0;
+            var chunks = [];
+            var reader = resp.body.getReader();
+
+            return (function pump() {
+              return reader.read().then(function (res) {
+                if (res.done) return new Blob(chunks, { type: "application/pdf" });
+                chunks.push(res.value);
+                received += res.value.length;
+                if (total) {
+                  var pct = Math.min(100, Math.round((received / total) * 100));
+                  barFill.style.width = pct + "%";
+                  pctEl.textContent = pct + "%";
+                } else {
+                  pctEl.textContent = (received / 1048576).toFixed(1) + " MB";
+                }
+                return pump();
+              });
+            })();
+          })
+          .then(function (blob) {
+            var url = URL.createObjectURL(blob);
+            viewer.src = url;
+            // Give the viewer a moment to render the first page, then reveal.
+            viewer.addEventListener("load", hideLoader);
+            setTimeout(hideLoader, 1200);
+          })
+          .catch(directLoad);
+      } else {
+        directLoad();
+      }
+    })();
+  </script>
 </body>
 </html>
